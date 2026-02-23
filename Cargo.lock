@@ -979,6 +979,7 @@ dependencies = [
  "dirs",
  "nova-core",
  "nova-protocol",
+ "nova-sandbox",
  "nova-tools",
  "serde",
  "serde_json",
@@ -986,6 +987,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

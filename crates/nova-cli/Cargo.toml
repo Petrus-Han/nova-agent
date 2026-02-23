@@ -22,3 +22,7 @@ crossterm.workspace = true
 colored.workspace = true
 toml.workspace = true
 dirs.workspace = true
+
+[dev-dependencies]
+uuid.workspace = true
+nova-sandbox.workspace = true
