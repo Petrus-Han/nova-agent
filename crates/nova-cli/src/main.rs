@@ -13,9 +13,23 @@ struct Cli {
     #[arg(short, long)]
     prompt: Option<String>,
 
-    /// Model to use (default: claude-sonnet-4-20250514).
-    #[arg(short, long, default_value = "claude-sonnet-4-20250514")]
-    model: String,
+    /// LLM provider: anthropic, openai, zhipu, deepseek, custom.
+    /// Auto-detected from environment if not specified.
+    #[arg(long)]
+    provider: Option<String>,
+
+    /// Model to use. Defaults depend on provider.
+    #[arg(short, long)]
+    model: Option<String>,
+
+    /// Custom API base URL (for self-hosted or custom endpoints).
+    #[arg(long)]
+    base_url: Option<String>,
+
+    /// API key. Can also be set via ANTHROPIC_API_KEY, OPENAI_API_KEY,
+    /// ZHIPU_API_KEY, or DEEPSEEK_API_KEY environment variables.
+    #[arg(long)]
+    api_key: Option<String>,
 
     /// Permission mode: ask, auto-read, auto-all.
     #[arg(long, default_value = "auto-read")]
@@ -51,28 +65,22 @@ async fn main() -> Result<()> {
     }
 
     // Load config
-    let config = config::load_config()?;
+    let file_config = config::load_config()?;
 
-    // Resolve API key
-    let api_key = std::env::var("ANTHROPIC_API_KEY")
-        .or_else(|_| {
-            config
-                .llm
-                .as_ref()
-                .and_then(|l| l.api_key.clone())
-                .ok_or(std::env::VarError::NotPresent)
-        })
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "ANTHROPIC_API_KEY not set. Set it in your environment or in ~/.nova/config.toml"
-            )
-        })?;
+    // Resolve provider and API key
+    let (provider, api_key) = resolve_provider_and_key(&cli, &file_config)?;
+
+    // Resolve model
+    let model = cli
+        .model
+        .unwrap_or_else(|| nova_core::llm::default_model(&provider).to_string());
 
     // Build LLM config
     let llm_config = nova_core::LlmConfig {
-        provider: nova_core::llm::LlmProvider::Anthropic,
+        provider: provider.clone(),
         api_key,
-        model: cli.model.clone(),
+        model: model.clone(),
+        base_url: cli.base_url.clone(),
         max_tokens: 16384,
         temperature: 0.0,
     };
@@ -93,7 +101,8 @@ async fn main() -> Result<()> {
     };
 
     // Print banner
-    print_banner(&cli.model);
+    let provider_label = format!("{:?}", provider).to_lowercase();
+    print_banner(&model, &provider_label);
 
     if let Some(prompt) = cli.prompt {
         // Non-interactive mode: process single prompt and exit
@@ -104,6 +113,73 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn resolve_provider_and_key(
+    cli: &Cli,
+    file_config: &config::Config,
+) -> Result<(nova_core::llm::LlmProvider, String)> {
+    // 1. Explicit --api-key flag
+    if let Some(ref key) = cli.api_key {
+        let provider = parse_provider(cli.provider.as_deref().unwrap_or("anthropic"));
+        return Ok((provider, key.clone()));
+    }
+
+    // 2. Explicit --provider flag -> look for corresponding env var
+    if let Some(ref provider_str) = cli.provider {
+        let provider = parse_provider(provider_str);
+        let env_var = match provider {
+            nova_core::llm::LlmProvider::Anthropic => "ANTHROPIC_API_KEY",
+            nova_core::llm::LlmProvider::OpenAI => "OPENAI_API_KEY",
+            nova_core::llm::LlmProvider::Zhipu => "ZHIPU_API_KEY",
+            nova_core::llm::LlmProvider::DeepSeek => "DEEPSEEK_API_KEY",
+            nova_core::llm::LlmProvider::Custom => "API_KEY",
+        };
+        if let Ok(key) = std::env::var(env_var) {
+            return Ok((provider, key));
+        }
+        // Also try config file
+        if let Some(ref llm) = file_config.llm {
+            if let Some(ref key) = llm.api_key {
+                return Ok((provider, key.clone()));
+            }
+        }
+        anyhow::bail!(
+            "{env_var} not set. Set it in your environment, use --api-key, or add it to ~/.nova/config.toml"
+        );
+    }
+
+    // 3. Auto-detect from environment
+    if let Some((provider, key)) = nova_core::llm::detect_from_env() {
+        return Ok((provider, key));
+    }
+
+    // 4. Config file
+    if let Some(ref llm) = file_config.llm {
+        if let Some(ref key) = llm.api_key {
+            let provider = llm
+                .provider
+                .as_deref()
+                .map(parse_provider)
+                .unwrap_or(nova_core::llm::LlmProvider::Anthropic);
+            return Ok((provider, key.clone()));
+        }
+    }
+
+    anyhow::bail!(
+        "No API key found. Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, ZHIPU_API_KEY, DEEPSEEK_API_KEY\n\
+         Or use --api-key flag, or add to ~/.nova/config.toml"
+    );
+}
+
+fn parse_provider(s: &str) -> nova_core::llm::LlmProvider {
+    match s.to_lowercase().as_str() {
+        "anthropic" | "claude" => nova_core::llm::LlmProvider::Anthropic,
+        "openai" | "gpt" => nova_core::llm::LlmProvider::OpenAI,
+        "zhipu" | "glm" | "chatglm" => nova_core::llm::LlmProvider::Zhipu,
+        "deepseek" => nova_core::llm::LlmProvider::DeepSeek,
+        _ => nova_core::llm::LlmProvider::Custom,
+    }
 }
 
 async fn run_single(
@@ -157,11 +233,11 @@ Guidelines:
     )
 }
 
-fn print_banner(model: &str) {
+fn print_banner(model: &str, provider: &str) {
     let version = env!("CARGO_PKG_VERSION");
     eprintln!(
         "{}",
-        format!("Nova Agent v{version} ({model})").cyan().bold()
+        format!("Nova Agent v{version} ({provider}/{model})").cyan().bold()
     );
     eprintln!(
         "{}",

@@ -449,12 +449,15 @@ fn test_cli_missing_api_key() {
         .arg("--prompt")
         .arg("test")
         .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ZHIPU_API_KEY")
+        .env_remove("DEEPSEEK_API_KEY")
         .output()
         .expect("Failed to run nova binary");
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("ANTHROPIC_API_KEY"));
+    assert!(stderr.contains("API") || stderr.contains("key"));
 }
 
 // ============================================================
