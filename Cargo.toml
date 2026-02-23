@@ -1,0 +1,79 @@
+[workspace]
+members = [
+    "crates/nova-protocol",
+    "crates/nova-core",
+    "crates/nova-tools",
+    "crates/nova-cli",
+    "crates/nova-sandbox",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/nova-agent/nova"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# File operations
+globset = "0.4"
+memmap2 = "0.9"
+ropey = "1"
+ignore = "0.4"
+
+# Git
+git2 = "0.19"
+
+# HTTP client (for LLM APIs)
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio-stream = "0.1"
+
+# Async traits
+async-trait = "0.1"
+
+# Concurrent data structures
+dashmap = "6"
+
+# Terminal
+crossterm = "0.28"
+colored = "2"
+
+# Config
+toml = "0.8"
+dirs = "6"
+
+# Workspace crates
+nova-protocol = { path = "crates/nova-protocol" }
+nova-core = { path = "crates/nova-core" }
+nova-tools = { path = "crates/nova-tools" }
+nova-cli = { path = "crates/nova-cli" }
+nova-sandbox = { path = "crates/nova-sandbox" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
